@@ -23,15 +23,18 @@
         .tab-button:not(.active) {
             @apply text-gray-600 hover:text-gray-900;
         }
+        .product-item {
+            @apply p-2 bg-gray-100 rounded border border-gray-200 cursor-pointer hover:bg-gray-200 transition-colors;
+        }
     </style>
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, onSnapshot, query, getDocs, Timestamp, where, doc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, getDocs, Timestamp, where, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
-        window.firebase = { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, collection, addDoc, onSnapshot, query, getDocs, Timestamp, where, doc, getDoc, setLogLevel };
+        window.firebase = { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, collection, addDoc, onSnapshot, query, getDocs, Timestamp, where, doc, getDoc, setDoc, setLogLevel };
     </script>
 </head>
 <body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
@@ -136,7 +139,7 @@
     </div>
 
     <script type="module">
-        const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, collection, addDoc, onSnapshot, query, getDocs, Timestamp, where, doc, getDoc, setLogLevel } = window.firebase;
+        const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, collection, addDoc, onSnapshot, query, getDocs, Timestamp, where, doc, getDoc, setDoc } = window.firebase;
 
         // Elementos de navegação
         const cadastroTabBtn = document.getElementById('cadastroTabBtn');
@@ -181,6 +184,7 @@
         let ordemProducaoAtual = {};
         let currentPauseContext = null;
         let currentStartContext = null;
+        let currentEditingProductId = null;
 
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfig = {
@@ -246,8 +250,12 @@
                 snapshot.forEach(doc => {
                     const data = doc.data();
                     const li = document.createElement('li');
-                    li.classList.add('p-2', 'bg-gray-100', 'rounded', 'border', 'border-gray-200');
+                    li.classList.add('product-item');
                     li.textContent = data.codigo;
+                    li.dataset.id = doc.id;
+                    li.addEventListener('click', () => {
+                        fillFormForEditing(doc.id, data);
+                    });
                     listaProdutosCadastradosUl.appendChild(li);
 
                     const option = document.createElement('option');
@@ -257,6 +265,20 @@
                 });
             });
         }
+        
+        function fillFormForEditing(id, data) {
+            currentEditingProductId = id;
+            codigoProdutoCadastroInput.value = data.codigo;
+            etapasContainer.innerHTML = '';
+            data.etapas.forEach(etapa => {
+                const etapaDiv = createEtapaField(etapa.nome);
+                const subetapasContainer = etapaDiv.querySelector('.subetapas-container');
+                etapa.subetapas.forEach(subetapa => {
+                    createSubetapaField(subetapasContainer, subetapa.nome);
+                });
+            });
+            salvarProdutoBtn.textContent = 'Atualizar Produto';
+        }
 
         // Funções de manipulação do DOM
         function switchTab(tabId) {
@@ -264,16 +286,21 @@
             document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
             document.getElementById(tabId).classList.add('active');
             document.getElementById(`${tabId}Btn`).classList.add('active');
+            
+            if (tabId === 'cadastroTab') {
+                salvarProdutoBtn.textContent = 'Salvar Produto';
+                currentEditingProductId = null;
+            }
         }
         
         // Funções de criação dinâmica de campos de formulário
-        function createEtapaField() {
+        function createEtapaField(etapaNome = '') {
             const etapaDiv = document.createElement('div');
             etapaDiv.classList.add('etapa', 'p-4', 'border', 'rounded-lg', 'bg-gray-50', 'space-y-2');
             etapaDiv.innerHTML = `
                 <div>
                     <label class="block text-sm font-medium text-gray-700">Nome da Etapa</label>
-                    <input type="text" class="etapa-nome mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" placeholder="Ex: Corte">
+                    <input type="text" class="etapa-nome mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" placeholder="Ex: Corte" value="${etapaNome}">
                 </div>
                 <div class="subetapas-container pl-4 space-y-2"></div>
                 <div class="flex space-x-2">
@@ -285,13 +312,15 @@
             
             etapaDiv.querySelector('.add-subetapa-btn').addEventListener('click', () => createSubetapaField(etapaDiv.querySelector('.subetapas-container')));
             etapaDiv.querySelector('.remove-etapa-btn').addEventListener('click', () => etapaDiv.remove());
+
+            return etapaDiv;
         }
         
-        function createSubetapaField(container) {
+        function createSubetapaField(container, subetapaNome = '') {
             const subetapaDiv = document.createElement('div');
             subetapaDiv.classList.add('subetapa', 'flex', 'items-center', 'space-x-2');
             subetapaDiv.innerHTML = `
-                <input type="text" class="subetapa-nome flex-1 block w-full rounded-md border-gray-300 shadow-sm p-2 text-sm" placeholder="Nome da Sub-etapa">
+                <input type="text" class="subetapa-nome flex-1 block w-full rounded-md border-gray-300 shadow-sm p-2 text-sm" placeholder="Nome da Sub-etapa" value="${subetapaNome}">
                 <button type="button" class="remove-subetapa-btn bg-red-400 hover:bg-red-500 text-white font-semibold py-1 px-2 rounded-md text-sm shadow-sm">Remover</button>
             `;
             container.appendChild(subetapaDiv);
@@ -392,7 +421,7 @@
         apontamentoTabBtn.addEventListener('click', () => switchTab('apontamentoTab'));
         fecharAvisoBtn.addEventListener('click', () => avisoModal.classList.add('hidden'));
 
-        addEtapaBtn.addEventListener('click', createEtapaField);
+        addEtapaBtn.addEventListener('click', () => createEtapaField());
 
         salvarProdutoBtn.addEventListener('click', async () => {
             const codigo = codigoProdutoCadastroInput.value.trim();
@@ -432,13 +461,21 @@
             };
 
             try {
-                await addDoc(collection(db, `artifacts/${appId}/public/data/produtos`), produtoData);
-                showAviso("Produto salvo com sucesso!");
+                if (currentEditingProductId) {
+                    const produtoDocRef = doc(db, `artifacts/${appId}/public/data/produtos`, currentEditingProductId);
+                    await setDoc(produtoDocRef, produtoData);
+                    showAviso("Produto atualizado com sucesso!");
+                    salvarProdutoBtn.textContent = 'Salvar Produto';
+                    currentEditingProductId = null;
+                } else {
+                    await addDoc(collection(db, `artifacts/${appId}/public/data/produtos`), produtoData);
+                    showAviso("Produto salvo com sucesso!");
+                }
                 codigoProdutoCadastroInput.value = '';
                 etapasContainer.innerHTML = '';
             } catch (e) {
-                console.error("Erro ao salvar produto: ", e);
-                showAviso("Erro ao salvar produto. Tente novamente.");
+                console.error("Erro ao salvar/atualizar produto: ", e);
+                showAviso("Erro ao salvar/atualizar produto. Tente novamente.");
             }
         });
 
@@ -473,7 +510,6 @@
                     emPausa: false
                 };
                 
-                let etapaIndex = 1;
                 produtoData.etapas.forEach(etapaTemplate => {
                     const novaEtapa = {
                         nome: etapaTemplate.nome,
@@ -486,7 +522,6 @@
                         subetapas: []
                     };
                     
-                    let subetapaIndex = 1;
                     etapaTemplate.subetapas.forEach(subetapaTemplate => {
                         novaEtapa.subetapas.push({
                             nome: subetapaTemplate.nome,
@@ -498,7 +533,6 @@
                             emPausa: false,
                             quantidade: quantidade
                         });
-                        subetapaIndex++;
                     });
                     
                     if (novaEtapa.subetapas.length > 0) {
@@ -508,7 +542,6 @@
                     }
                     
                     ordemProducaoAtual.etapas.push(novaEtapa);
-                    etapaIndex++;
                 });
 
                 renderizarOrdem();
