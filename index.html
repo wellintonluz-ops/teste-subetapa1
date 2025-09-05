@@ -402,14 +402,15 @@
             if (subIndex !== -1) {
                 ordemProducaoAtual.etapas[index].subetapas[subIndex].inicio = now;
                 ordemProducaoAtual.etapas[index].subetapas[subIndex].responsavel = responsavel;
-                parent.querySelector('.responsavel-display').textContent = `Responsável: ${responsavel}`;
+                parent.querySelector('.responsavel-subetapa-display').textContent = `Responsável: ${responsavel}`;
                 
                 // Inicia a etapa pai se ainda não estiver iniciada
                 if (!ordemProducaoAtual.etapas[index].inicio) {
                     ordemProducaoAtual.etapas[index].inicio = now;
                     ordemProducaoAtual.etapas[index].responsavel = responsavel;
-                    const parentEtapaElement = document.querySelector(`[data-index="${index}"][data-sub-index="-1"]`);
-                    parentEtapaElement.querySelector('.responsavel-display').textContent = `Responsável: ${responsavel}`;
+                    const parentEtapaElement = document.querySelector(`.etapa-card[data-index="${index}"]`);
+                    parentEtapaElement.querySelector('.responsavel-etapa-display').textContent = `Responsável: ${responsavel}`;
+                    ordemProducaoAtual.dataInicio = Timestamp.now(); // Inicia a ordem completa
                 }
             }
             
@@ -508,6 +509,13 @@
             try {
                 const produtoDocRef = doc(db, `artifacts/${appId}/public/data/produtos`, produtoId);
                 const produtoDoc = await getDoc(produtoDocRef);
+                
+                // Adicionado: Verificação se o documento existe
+                if (!produtoDoc.exists()) {
+                    showAviso("Produto não encontrado. Ele pode ter sido removido.");
+                    return;
+                }
+                
                 const produtoData = produtoDoc.data();
                 
                 ordemProducaoAtual = {
