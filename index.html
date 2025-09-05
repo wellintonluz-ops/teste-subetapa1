@@ -26,6 +26,10 @@
         .product-item {
             @apply p-2 bg-gray-100 rounded border border-gray-200 cursor-pointer hover:bg-gray-200 transition-colors;
         }
+        .etapa-concluida {
+            background-color: #d1fae5;
+            border-color: #6ee7b7;
+        }
     </style>
     <!-- Firebase SDKs -->
     <script type="module">
@@ -212,6 +216,9 @@
             const h = horas % 24;
             return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
         }
+        function checkAllSubetapasConcluded(etapa) {
+            return etapa.subetapas.every(subetapa => subetapa.fim !== null);
+        }
 
         // Funções do Firebase
         async function initializeFirebase() {
@@ -391,16 +398,21 @@
             const { parent, index, subIndex } = currentStartContext;
             const now = new Date().getTime();
             
+            // Lógica para subetapa
             if (subIndex !== -1) {
                 ordemProducaoAtual.etapas[index].subetapas[subIndex].inicio = now;
                 ordemProducaoAtual.etapas[index].subetapas[subIndex].responsavel = responsavel;
                 parent.querySelector('.responsavel-display').textContent = `Responsável: ${responsavel}`;
-            } else {
-                ordemProducaoAtual.etapas[index].inicio = now;
-                ordemProducaoAtual.etapas[index].responsavel = responsavel;
-                parent.querySelector('.responsavel-display').textContent = `Responsável: ${responsavel}`;
+                
+                // Inicia a etapa pai se ainda não estiver iniciada
+                if (!ordemProducaoAtual.etapas[index].inicio) {
+                    ordemProducaoAtual.etapas[index].inicio = now;
+                    ordemProducaoAtual.etapas[index].responsavel = responsavel;
+                    const parentEtapaElement = document.querySelector(`[data-index="${index}"][data-sub-index="-1"]`);
+                    parentEtapaElement.querySelector('.responsavel-display').textContent = `Responsável: ${responsavel}`;
+                }
             }
-
+            
             parent.querySelector('.iniciar-btn').disabled = true;
             parent.querySelector('.pausar-btn').disabled = false;
             parent.querySelector('.concluir-btn').disabled = false;
@@ -502,12 +514,13 @@
                     numero: numeroOrdem,
                     produto: produtoData.codigo,
                     quantidade: quantidade,
-                    dataInicio: Timestamp.now(),
-                    pausaInicio: null,
-                    pausas: [],
-                    tempoTotalPausas: 0,
+                    dataInicio: null,
+                    dataFim: null,
+                    tempoLiquidoMs: 0,
+                    tempoLiquidoFormatado: '--',
+                    produtividade: 0,
+                    concluida: false,
                     etapas: [],
-                    emPausa: false
                 };
                 
                 produtoData.etapas.forEach(etapaTemplate => {
@@ -515,23 +528,25 @@
                         nome: etapaTemplate.nome,
                         inicio: null,
                         fim: null,
-                        pausaInicio: null,
-                        pausas: [],
+                        tempoLiquido: 0,
                         tempoTotalPausas: 0,
-                        emPausa: false,
+                        concluida: false,
                         subetapas: []
                     };
                     
                     etapaTemplate.subetapas.forEach(subetapaTemplate => {
                         novaEtapa.subetapas.push({
                             nome: subetapaTemplate.nome,
+                            responsavel: null,
                             inicio: null,
                             fim: null,
                             pausaInicio: null,
                             pausas: [],
                             tempoTotalPausas: 0,
                             emPausa: false,
-                            quantidade: quantidade
+                            quantidade: quantidade,
+                            tempoLiquido: 0,
+                            produtividade: 0
                         });
                     });
                     
@@ -546,8 +561,6 @@
 
                 renderizarOrdem();
                 ordemDetalhesDiv.classList.remove('hidden');
-                pausarOrdemBtn.disabled = false;
-                finalizarOrdemBtn.disabled = false;
                 abrirOrdemBtn.disabled = true;
 
             } catch (e) {
@@ -562,14 +575,11 @@
             
             ordemProducaoAtual.etapas.forEach((etapa, index) => {
                 const etapaDiv = document.createElement('div');
-                etapaDiv.classList.add('p-4', 'bg-gray-100', 'rounded-lg', 'border', 'border-gray-200', 'space-y-2');
+                etapaDiv.classList.add('etapa-card', 'p-4', 'bg-gray-100', 'rounded-lg', 'border', 'border-gray-200', 'space-y-2');
                 etapaDiv.dataset.index = index;
-                etapaDiv.dataset.subIndex = -1;
-                
-                // Adiciona campos para exibir o tempo total da etapa
                 etapaDiv.innerHTML = `
                     <h4 class="text-md font-semibold">${etapa.nome} (${etapa.quantidade} pçs)</h4>
-                    <p class="text-sm text-gray-500 responsavel-display"></p>
+                    <p class="text-sm text-gray-500 responsavel-etapa-display"></p>
                     <p class="text-sm text-gray-500 mt-2">
                         <span class="font-medium">Tempo Líquido Total:</span>
                         <span class="tempo-liquido-etapa">--</span>
@@ -585,12 +595,12 @@
                 const subetapasContainer = etapaDiv.querySelector('.subetapas-display');
                 etapa.subetapas.forEach((subetapa, subIndex) => {
                     const subetapaDiv = document.createElement('div');
-                    subetapaDiv.classList.add('p-2', 'bg-white', 'rounded-lg', 'border', 'border-gray-200', 'flex', 'items-center', 'space-x-2');
+                    subetapaDiv.classList.add('subetapa-card', 'p-2', 'bg-white', 'rounded-lg', 'border', 'border-gray-200', 'flex', 'items-center', 'space-x-2');
                     subetapaDiv.dataset.index = index;
                     subetapaDiv.dataset.subIndex = subIndex;
                     subetapaDiv.innerHTML = `
                         <span class="flex-1 text-sm">${subetapa.nome} (${subetapa.quantidade} pçs)</span>
-                        <span class="flex-1 text-xs text-gray-500 responsavel-display"></span>
+                        <span class="flex-1 text-xs text-gray-500 responsavel-subetapa-display"></span>
                         <button class="iniciar-btn bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-1 px-4 rounded-md">Iniciar</button>
                         <button class="pausar-btn bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-1 px-4 rounded-md" disabled>Pausar</button>
                         <button class="concluir-btn bg-green-600 hover:bg-green-700 text-white font-semibold py-1 px-4 rounded-md" disabled>Concluir</button>
@@ -610,19 +620,14 @@
         // Funções para controle de tempo
         function handleStart(event) {
             const btn = event.target;
-            const parent = btn.closest('.subetapa') || btn.closest('.etapa');
+            const parent = btn.closest('.subetapa-card');
             const index = parseInt(parent.dataset.index);
             const subIndex = parseInt(parent.dataset.subIndex);
             
-            let contextData;
-            if (subIndex !== -1) {
-                contextData = ordemProducaoAtual.etapas[index].subetapas[subIndex];
-            } else {
-                contextData = ordemProducaoAtual.etapas[index];
-            }
+            const subetapaData = ordemProducaoAtual.etapas[index].subetapas[subIndex];
 
-            if (contextData.inicio) {
-                showAviso("Esta etapa já foi iniciada.");
+            if (subetapaData.inicio) {
+                showAviso("Esta sub-etapa já foi iniciada.");
                 return;
             }
 
@@ -632,42 +637,36 @@
 
         function handlePause(event) {
             const btn = event.target;
-            const parent = btn.closest('.subetapa') || btn.closest('.etapa');
+            const parent = btn.closest('.subetapa-card');
             const index = parseInt(parent.dataset.index);
             const subIndex = parseInt(parent.dataset.subIndex);
 
-            let contextData;
-            if (subIndex !== -1) {
-                contextData = ordemProducaoAtual.etapas[index].subetapas[subIndex];
-            } else {
-                contextData = ordemProducaoAtual.etapas[index];
-            }
+            const subetapaData = ordemProducaoAtual.etapas[index].subetapas[subIndex];
 
-            if (contextData.emPausa) {
+            if (subetapaData.emPausa) {
                 const now = new Date().getTime();
-                const duracaoPausa = now - contextData.pausaInicio;
-                contextData.tempoTotalPausas += duracaoPausa;
-                contextData.pausas[contextData.pausas.length - 1].fim = now;
-                contextData.emPausa = false;
+                const duracaoPausa = now - subetapaData.pausaInicio;
+                subetapaData.tempoTotalPausas += duracaoPausa;
+                subetapaData.pausas[subetapaData.pausas.length - 1].fim = now;
+                subetapaData.emPausa = false;
                 btn.textContent = 'Pausar';
             } else {
-                currentPauseContext = { type: 'step', element: parent };
+                currentPauseContext = { element: parent, index: index, subIndex: subIndex };
                 justificativaModal.classList.remove('hidden');
-                contextData.emPausa = true;
             }
         }
 
         function handleConclude(event) {
             const btn = event.target;
-            const parent = btn.closest('.subetapa'); // Apenas subetapas podem ser concluídas
-            if (!parent) return; // Garante que é uma subetapa
+            const parent = btn.closest('.subetapa-card');
+            if (!parent) return;
 
             const index = parseInt(parent.dataset.index);
             const subIndex = parseInt(parent.dataset.subIndex);
 
             const subetapaData = ordemProducaoAtual.etapas[index].subetapas[subIndex];
             const etapaData = ordemProducaoAtual.etapas[index];
-            const parentEtapaElement = document.querySelector(`[data-index="${index}"][data-sub-index="-1"]`);
+            const parentEtapaElement = document.querySelector(`.etapa-card[data-index="${index}"]`);
 
             if (!subetapaData.inicio) {
                 showAviso("Sub-etapa não iniciada.");
@@ -692,15 +691,15 @@
             const tempoLiquidoEmHoras = tempoLiquido / (1000 * 60 * 60);
             subetapaData.produtividade = tempoLiquidoEmHoras > 0 ? subetapaData.quantidade / tempoLiquidoEmHoras : 0;
             
-            // Desabilita botões da subetapa
             btn.disabled = true;
             parent.querySelector('.iniciar-btn').disabled = true;
             parent.querySelector('.pausar-btn').disabled = true;
 
             showAviso(`Sub-etapa "${subetapaData.nome}" concluída!`);
+            parent.classList.add('etapa-concluida');
 
             // Checa se todas as subetapas da etapa pai foram concluídas
-            const allSubetapasConcluidas = etapaData.subetapas.every(sub => sub.fim !== null);
+            const allSubetapasConcluidas = checkAllSubetapasConcluded(etapaData);
 
             if (allSubetapasConcluidas) {
                 // Calcula o tempo total da etapa pai
@@ -719,53 +718,36 @@
                 etapaData.concluida = true;
 
                 // Atualiza o display da etapa pai
-                const tempoLiquidoDisplay = parentEtapaElement.querySelector('.tempo-liquido-etapa');
-                const pausasDisplay = parentEtapaElement.querySelector('.pausas-etapa');
-                tempoLiquidoDisplay.textContent = etapaData.tempoLiquidoFormatado;
-                pausasDisplay.textContent = formatarTempo(etapaData.tempoTotalPausas);
-
-                parentEtapaElement.classList.add('bg-green-100'); // Fica verde ao concluir
+                parentEtapaElement.querySelector('.tempo-liquido-etapa').textContent = etapaData.tempoLiquidoFormatado;
+                parentEtapaElement.querySelector('.pausas-etapa').textContent = formatarTempo(etapaData.tempoTotalPausas);
+                parentEtapaElement.classList.add('etapa-concluida');
+                
                 showAviso(`Etapa "${etapaData.nome}" concluída automaticamente!`);
+
+                const allEtapasConcluidas = ordemProducaoAtual.etapas.every(etapa => etapa.concluida);
+                if (allEtapasConcluidas) {
+                    handleFinalizeMain();
+                }
             }
         }
         
-        function handlePauseMain() {
-            if (ordemProducaoAtual.emPausa) {
-                const now = new Date().getTime();
-                const duracaoPausa = now - ordemProducaoAtual.pausaInicio;
-                ordemProducaoAtual.tempoTotalPausas += duracaoPausa;
-                ordemProducaoAtual.pausas[ordemProducaoAtual.pausas.length - 1].fim = now;
-                ordemProducaoAtual.emPausa = false;
-                pausarOrdemBtn.textContent = 'Pausar Ordem';
-            } else {
-                currentPauseContext = { type: 'main' };
-                justificativaModal.classList.remove('hidden');
-                ordemProducaoAtual.emPausa = true;
-            }
-        }
-
         async function handleFinalizeMain() {
-            if (!ordemProducaoAtual.dataInicio) {
-                showAviso("Ordem não iniciada.");
-                return;
-            }
-
-            if (ordemProducaoAtual.emPausa) {
-                const now = new Date().getTime();
-                const duracaoPausa = now - ordemProducaoAtual.pausaInicio;
-                ordemProducaoAtual.tempoTotalPausas += duracaoPausa;
-                ordemProducaoAtual.pausas[ordemProducaoAtual.pausas.length - 1].fim = now;
-                ordemProducaoAtual.emPausa = false;
-            }
+            if (ordemProducaoAtual.concluida) return;
             
-            const fimOrdem = new Date().getTime();
-            const tempoBruto = fimOrdem - ordemProducaoAtual.dataInicio.toMillis();
-            const tempoLiquido = tempoBruto - ordemProducaoAtual.tempoTotalPausas;
+            ordemProducaoAtual.dataFim = Timestamp.now();
+            const tempoBruto = ordemProducaoAtual.dataFim.toMillis() - ordemProducaoAtual.dataInicio.toMillis();
+            
+            // Recalcula tempo total da ordem somando tempos liquidos das etapas
+            let totalTempoLiquidoOrdem = 0;
+            ordemProducaoAtual.etapas.forEach(etapa => {
+                totalTempoLiquidoOrdem += etapa.tempoLiquido;
+            });
 
-            ordemProducaoAtual.dataFim = Timestamp.fromMillis(fimOrdem);
-            ordemProducaoAtual.tempoLiquidoMs = tempoLiquido;
-            ordemProducaoAtual.tempoLiquidoFormatado = formatarTempo(tempoLiquido);
-            ordemProducaoAtual.produtividade = (tempoLiquido / (1000 * 60 * 60)) > 0 ? ordemProducaoAtual.quantidade / (tempoLiquido / (1000 * 60 * 60)) : 0;
+            ordemProducaoAtual.tempoLiquidoMs = totalTempoLiquidoOrdem;
+            ordemProducaoAtual.tempoLiquidoFormatado = formatarTempo(totalTempoLiquidoOrdem);
+            
+            const tempoLiquidoEmHoras = ordemProducaoAtual.tempoLiquidoMs / (1000 * 60 * 60);
+            ordemProducaoAtual.produtividade = tempoLiquidoEmHoras > 0 ? ordemProducaoAtual.quantidade / tempoLiquidoEmHoras : 0;
             ordemProducaoAtual.concluida = true;
 
             try {
