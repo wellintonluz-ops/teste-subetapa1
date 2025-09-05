@@ -565,14 +565,19 @@
                 etapaDiv.classList.add('p-4', 'bg-gray-100', 'rounded-lg', 'border', 'border-gray-200', 'space-y-2');
                 etapaDiv.dataset.index = index;
                 etapaDiv.dataset.subIndex = -1;
+                
+                // Adiciona campos para exibir o tempo total da etapa
                 etapaDiv.innerHTML = `
                     <h4 class="text-md font-semibold">${etapa.nome} (${etapa.quantidade} pçs)</h4>
                     <p class="text-sm text-gray-500 responsavel-display"></p>
-                    <div class="flex space-x-2">
-                        <button class="iniciar-btn bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-1 px-4 rounded-md">Iniciar</button>
-                        <button class="pausar-btn bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-1 px-4 rounded-md" disabled>Pausar</button>
-                        <button class="concluir-btn bg-green-600 hover:bg-green-700 text-white font-semibold py-1 px-4 rounded-md" disabled>Concluir</button>
-                    </div>
+                    <p class="text-sm text-gray-500 mt-2">
+                        <span class="font-medium">Tempo Líquido Total:</span>
+                        <span class="tempo-liquido-etapa">--</span>
+                    </p>
+                    <p class="text-sm text-gray-500">
+                        <span class="font-medium">Pausas Total:</span>
+                        <span class="pausas-etapa">--</span>
+                    </p>
                     <div class="subetapas-display pl-4 space-y-2"></div>
                 `;
                 etapasApontamentoDiv.appendChild(etapaDiv);
@@ -654,36 +659,74 @@
 
         function handleConclude(event) {
             const btn = event.target;
-            const parent = btn.closest('.subetapa') || btn.closest('.etapa');
+            const parent = btn.closest('.subetapa'); // Apenas subetapas podem ser concluídas
+            if (!parent) return; // Garante que é uma subetapa
+
             const index = parseInt(parent.dataset.index);
             const subIndex = parseInt(parent.dataset.subIndex);
 
-            let contextData;
-            if (subIndex !== -1) {
-                contextData = ordemProducaoAtual.etapas[index].subetapas[subIndex];
-            } else {
-                contextData = ordemProducaoAtual.etapas[index];
-            }
+            const subetapaData = ordemProducaoAtual.etapas[index].subetapas[subIndex];
+            const etapaData = ordemProducaoAtual.etapas[index];
+            const parentEtapaElement = document.querySelector(`[data-index="${index}"][data-sub-index="-1"]`);
 
-            if (!contextData.inicio) {
-                showAviso("Etapa não iniciada.");
+            if (!subetapaData.inicio) {
+                showAviso("Sub-etapa não iniciada.");
+                return;
+            }
+            if (subetapaData.fim) {
+                showAviso("Sub-etapa já concluída.");
+                return;
+            }
+            if (subetapaData.emPausa) {
+                showAviso("Não é possível concluir enquanto a sub-etapa está em pausa.");
                 return;
             }
 
             const now = new Date().getTime();
-            contextData.fim = now;
-            const tempoBruto = now - contextData.inicio;
-            const tempoLiquido = tempoBruto - contextData.tempoTotalPausas;
-            contextData.tempoLiquido = tempoLiquido;
-            contextData.tempoLiquidoFormatado = formatarTempo(tempoLiquido);
+            subetapaData.fim = now;
+            const tempoBruto = now - subetapaData.inicio;
+            const tempoLiquido = tempoBruto - subetapaData.tempoTotalPausas;
+            subetapaData.tempoLiquido = tempoLiquido;
+            subetapaData.tempoLiquidoFormatado = formatarTempo(tempoLiquido);
             
             const tempoLiquidoEmHoras = tempoLiquido / (1000 * 60 * 60);
-            contextData.produtividade = tempoLiquidoEmHoras > 0 ? (contextData.quantidade || ordemProducaoAtual.quantidade) / tempoLiquidoEmHoras : 0;
+            subetapaData.produtividade = tempoLiquidoEmHoras > 0 ? subetapaData.quantidade / tempoLiquidoEmHoras : 0;
             
+            // Desabilita botões da subetapa
             btn.disabled = true;
             parent.querySelector('.iniciar-btn').disabled = true;
             parent.querySelector('.pausar-btn').disabled = true;
-            showAviso(`Etapa "${contextData.nome}" concluída!`);
+
+            showAviso(`Sub-etapa "${subetapaData.nome}" concluída!`);
+
+            // Checa se todas as subetapas da etapa pai foram concluídas
+            const allSubetapasConcluidas = etapaData.subetapas.every(sub => sub.fim !== null);
+
+            if (allSubetapasConcluidas) {
+                // Calcula o tempo total da etapa pai
+                let totalTempoLiquidoEtapa = 0;
+                let totalTempoPausasEtapa = 0;
+
+                etapaData.subetapas.forEach(sub => {
+                    totalTempoLiquidoEtapa += sub.tempoLiquido;
+                    totalTempoPausasEtapa += sub.tempoTotalPausas;
+                });
+                
+                etapaData.fim = now;
+                etapaData.tempoLiquido = totalTempoLiquidoEtapa;
+                etapaData.tempoTotalPausas = totalTempoPausasEtapa;
+                etapaData.tempoLiquidoFormatado = formatarTempo(totalTempoLiquidoEtapa);
+                etapaData.concluida = true;
+
+                // Atualiza o display da etapa pai
+                const tempoLiquidoDisplay = parentEtapaElement.querySelector('.tempo-liquido-etapa');
+                const pausasDisplay = parentEtapaElement.querySelector('.pausas-etapa');
+                tempoLiquidoDisplay.textContent = etapaData.tempoLiquidoFormatado;
+                pausasDisplay.textContent = formatarTempo(etapaData.tempoTotalPausas);
+
+                parentEtapaElement.classList.add('bg-green-100'); // Fica verde ao concluir
+                showAviso(`Etapa "${etapaData.nome}" concluída automaticamente!`);
+            }
         }
         
         function handlePauseMain() {
