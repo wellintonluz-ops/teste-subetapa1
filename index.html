@@ -126,6 +126,7 @@
             overflow-y: auto;
             border: 2px solid #ddd;
             border-radius: 8px;
+            position: relative;
         }
 
         .gantt-timeline {
@@ -141,6 +142,7 @@
             position: sticky;
             top: 0;
             z-index: 100;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
 
         .gantt-month-header {
@@ -156,9 +158,6 @@
         .gantt-days-header {
             display: flex;
             background: #8b9dc3;
-            position: sticky;
-            top: 59px;
-            z-index: 99;
         }
 
         .gantt-day-header {
@@ -1098,10 +1097,10 @@
             });
             html += '</div>';
 
-            // Days header row
-            html += '<div class="gantt-header-row">';
+            // Days header row (also sticky)
+            html += '<div class="gantt-header-row" style="top: 41px;">';
             html += '<div class="gantt-header-cell" style="background: #8b9dc3;">Dia</div>';
-            html += '<div class="gantt-days-header">';
+            html += '<div class="gantt-days-header" style="position: relative; top: 0;">';
             
             monthsToDisplay.forEach(monthData => {
                 for (let day = 1; day <= monthData.days; day++) {
